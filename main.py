@@ -1,11 +1,9 @@
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI()
 
-# Permette le connessioni da qualsiasi origine (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,25 +12,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-clients = []
+rooms = {}
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@app.websocket("/ws/{room_code}")
+async def websocket_endpoint(websocket: WebSocket, room_code: str):
     await websocket.accept()
-    clients.append(websocket)
+    if room_code not in rooms:
+        rooms[room_code] = []
+    rooms[room_code].append(websocket)
+
     try:
         while True:
             data = await websocket.receive_text()
-            for client in clients:
+            for client in rooms[room_code]:
                 if client != websocket:
                     await client.send_text(data)
-    except Exception:
-        clients.remove(websocket)
+    except WebSocketDisconnect:
+        rooms[room_code].remove(websocket)
+        if not rooms[room_code]:
+            del rooms[room_code]
 
 @app.get("/")
 def root():
-    return {"message": "Server WebSocket attivo per il gioco Tris"}
-
-# Per eseguire in locale (opzionale se usi render.com)
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+    return {"message": "Server WebSocket attivo con supporto stanze"}
