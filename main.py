@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,6 +17,7 @@ rooms = {}
 @app.websocket("/ws/{room_code}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str):
     await websocket.accept()
+
     if room_code not in rooms:
         rooms[room_code] = []
 
@@ -25,15 +27,31 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         while True:
             data = await websocket.receive_json()
 
-            # Assegnazione dei simboli X e O
-            if data.get("type") == "join":
-                symbol = "X" if len(rooms[room_code]) == 1 else "O"
-                await websocket.send_json({"type": "assign", "symbol": symbol})
+            # JOIN / CREATE HANDLING
+            if data.get("type") == "create_room":
+                await websocket.send_json({"type": "room_created", "roomId": room_code})
 
+            elif data.get("type") == "join_room":
+                await websocket.send_json({"type": "room_joined", "roomId": room_code})
+                for client in rooms[room_code]:
+                    if client != websocket:
+                        await client.send_json({"type": "opponent_joined"})
+
+            # GAME MOVES
             elif data.get("type") == "move":
                 for client in rooms[room_code]:
                     if client != websocket:
                         await client.send_json(data)
+
+            # ROUND RESET
+            elif data.get("type") == "reset_round":
+                for client in rooms[room_code]:
+                    await client.send_json({"type": "reset_round"})
+
+            # TOTAL RESET / RESET SFIDE
+            elif data.get("type") == "reset_game":
+                for client in rooms[room_code]:
+                    await client.send_json({"type": "reset_game"})
 
     except WebSocketDisconnect:
         rooms[room_code].remove(websocket)
@@ -42,5 +60,4 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
 
 @app.get("/")
 def root():
-    return {"message": "Server WebSocket attivo con supporto stanze"}
-
+    return {"message": "Server WebSocket attivo e pronto."}
